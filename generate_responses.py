@@ -3,13 +3,44 @@
 
 import json
 import argparse
+import re
+import sys
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import httpx
 from tqdm import tqdm
 
-from config import get_settings
+_THINK_RE = re.compile(r"<think>(.*?)</think>", re.DOTALL)
+
+
+def split_thinking(text: str) -> tuple[str, str]:
+    """Return (response, reasoning_content).
+
+    Mirrors mind-eval's separate_thinking_from_response:
+      1. <think>...</think> present — reasoning is the inner text, response
+         is what follows </think>.
+      2. Only </think> present (no opening tag) — reasoning is everything
+         before </think> (with any stray <think> stripped), response is
+         after.
+      3. Neither tag present — warn (IFBench is run against thinking models,
+         so a missing close tag usually means a malformed/truncated
+         generation), and return the full text as response.
+    """
+    match = _THINK_RE.search(text)
+    if match is not None:
+        return text[match.end() :].strip(), match.group(1).strip()
+
+    parts = text.split("</think>", 1)
+    if len(parts) == 2:
+        return parts[1].strip(), parts[0].replace("<think>", "").strip()
+
+    tqdm.write(
+        f"WARNING: thinking split failed — no </think> in response "
+        f"(len={len(text)}, head={text[:80]!r})",
+        file=sys.stderr,
+    )
+    return text.strip(), ""
 
 
 def load_prompts(input_file: str) -> list[dict]:
@@ -40,9 +71,10 @@ def generate_response(
     payload = {
         "model": model,
         "messages": [{"role": "user", "content": prompt}],
-        "temperature": temperature,
         "max_tokens": max_tokens,
     }
+    if temperature is not None:
+        payload["temperature"] = temperature
     if seed is not None:
         payload["seed"] = seed
 
@@ -57,26 +89,23 @@ def generate_response(
 
 
 def main():
-    # Load settings from .env first
-    settings = get_settings()
-
     parser = argparse.ArgumentParser(
         description="Generate responses from an OpenAI-compatible API for IFBench",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     parser.add_argument(
         "--api-base",
-        default=settings.api_base,
+        required=True,
         help="Base URL for the OpenAI-compatible API",
     )
     parser.add_argument(
         "--model",
-        default=settings.model,
+        required=True,
         help="Model name to use",
     )
     parser.add_argument(
         "--input-file",
-        default=settings.input_file,
+        default="data/IFBench_test.jsonl",
         help="Path to IFBench test file",
     )
     parser.add_argument(
@@ -86,30 +115,30 @@ def main():
     parser.add_argument(
         "--temperature",
         type=float,
-        default=settings.temperature,
-        help="Sampling temperature",
+        default=None,
+        help="Sampling temperature (omitted from request if unset — server picks default)",
     )
     parser.add_argument(
         "--max-tokens",
         type=int,
-        default=settings.max_tokens,
+        default=16000,
         help="Maximum tokens to generate",
     )
     parser.add_argument(
         "--seed",
         type=int,
-        default=settings.seed,
+        default=42,
         help="Random seed for reproducibility (omit for random)",
     )
     parser.add_argument(
         "--api-key",
-        default=settings.api_key,
+        default=None,
         help="API key (if required)",
     )
     parser.add_argument(
         "--workers",
         type=int,
-        default=settings.workers,
+        default=32,
         help="Number of parallel workers",
     )
     parser.add_argument(
@@ -120,19 +149,13 @@ def main():
 
     args = parser.parse_args()
 
-    # Validate required settings
-    if not args.model:
-        parser.error("--model is required (or set MODEL in .env)")
-    if not args.api_base:
-        parser.error("--api-base is required (or set API_BASE in .env)")
-
     prompts = load_prompts(args.input_file)
     print(f"Loaded {len(prompts)} prompts from {args.input_file}")
 
     if not args.output_file:
         safe_model_name = args.model.replace("/", "-")
         args.output_file = f"data/{safe_model_name}-responses.jsonl"
-        
+
     print(f"Model: {args.model}")
     print(f"API: {args.api_base}")
 
@@ -177,20 +200,29 @@ def main():
                     prompt_data = future_to_prompt[future]
                     try:
                         response = future.result()
-                        results.append({
-                            "prompt": prompt_data["prompt"],
-                            "response": response,
-                        })
+                        response_text, reasoning_content = split_thinking(response)
+                        results.append(
+                            {
+                                "prompt": prompt_data["prompt"],
+                                "response": response_text,
+                                "reasoning_content": reasoning_content,
+                            }
+                        )
                     except Exception as e:
-                        errors.append({
-                            "key": prompt_data["key"],
-                            "error": str(e),
-                        })
+                        errors.append(
+                            {
+                                "key": prompt_data["key"],
+                                "error": str(e),
+                            }
+                        )
                         # Add empty response so eval can still run
-                        results.append({
-                            "prompt": prompt_data["prompt"],
-                            "response": "",
-                        })
+                        results.append(
+                            {
+                                "prompt": prompt_data["prompt"],
+                                "response": "",
+                                "reasoning_content": "",
+                            }
+                        )
                     pbar.update(1)
 
                     # Save incrementally
@@ -211,7 +243,9 @@ def main():
             print(f"  - Key {e['key']}: {e['error']}")
 
     print(f"\nRun evaluation with:")
-    print(f"  uv run python3 -m run_eval --input_data={args.input_file} --input_response_data={args.output_file} --output_dir=eval")
+    print(
+        f"  uv run python3 -m run_eval --input_data={args.input_file} --input_response_data={args.output_file} --output_dir=eval"
+    )
 
 
 if __name__ == "__main__":

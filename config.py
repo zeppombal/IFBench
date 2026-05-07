@@ -28,12 +28,12 @@ class BenchmarkSettings(BaseSettings):
     )
 
     # Generation Parameters
-    temperature: float = Field(
-        default=0.6,
-        description="Sampling temperature",
+    temperature: float | None = Field(
+        default=None,
+        description="Sampling temperature (omitted from request if None — server picks default)",
     )
     max_tokens: int = Field(
-        default=4096,
+        default=16000,
         description="Maximum tokens to generate",
     )
     seed: int | None = Field(
