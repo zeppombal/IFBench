@@ -176,8 +176,8 @@ def read_prompt_to_response_dict(input_jsonl_filename):
   return return_dict
 
 
-def print_report(outputs):
-  """Prints a report on accuracy scores."""
+def compute_report(outputs):
+  """Return the accuracy report as a structured dict (same numbers print_report shows)."""
 
   prompt_total = 0
   prompt_correct = 0
@@ -204,25 +204,40 @@ def print_report(outputs):
     for instruction_id, followed_or_not in zip(
         instruction_id_list, follow_instruction_list
     ):
-      instruction_id = instruction_id.split(":")[0]
-      tier0_total[instruction_id] += 1
+      tier0_id = instruction_id.split(":")[0]
+      tier0_total[tier0_id] += 1
       if followed_or_not:
-        tier0_correct[instruction_id] += 1
+        tier0_correct[tier0_id] += 1
 
-    for instruction_id, followed_or_not in zip(
-        instruction_id_list, follow_instruction_list
-    ):
       tier1_total[instruction_id] += 1
       if followed_or_not:
         tier1_correct[instruction_id] += 1
 
-  print(f"prompt-level: {prompt_correct / prompt_total}")
-  print(f"instruction-level: {instruction_correct / instruction_total}")
+  return {
+      "prompt_level_accuracy": prompt_correct / prompt_total,
+      "instruction_level_accuracy": instruction_correct / instruction_total,
+      "prompt_total": prompt_total,
+      "prompt_correct": prompt_correct,
+      "instruction_total": instruction_total,
+      "instruction_correct": instruction_correct,
+      "tier0": {
+          k: tier0_correct[k] / tier0_total[k] for k in sorted(tier0_total)
+      },
+      "tier1": {
+          k: tier1_correct[k] / tier1_total[k] for k in sorted(tier1_total)
+      },
+  }
+
+
+def print_report(outputs):
+  """Prints a report on accuracy scores."""
+
+  report = compute_report(outputs)
+  print(f"prompt-level: {report['prompt_level_accuracy']}")
+  print(f"instruction-level: {report['instruction_level_accuracy']}")
   print()
-  for instruction_id in sorted(tier0_total.keys()):
-    accuracy = tier0_correct[instruction_id] / tier0_total[instruction_id]
+  for instruction_id, accuracy in report["tier0"].items():
     print(f"{instruction_id} {accuracy}")
   print()
-  for instruction_id in sorted(tier1_total.keys()):
-    accuracy = tier1_correct[instruction_id] / tier1_total[instruction_id]
+  for instruction_id, accuracy in report["tier1"].items():
     print(f"{instruction_id} {accuracy}")

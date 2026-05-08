@@ -15,6 +15,7 @@
 
 """Binary of evaluating instruction following. See README.md."""
 
+import json
 import os
 
 from absl import app
@@ -74,6 +75,12 @@ def main(argv):
     )
     evaluation_lib.write_outputs(output_file_name, outputs)
     logging.info("Generated: %s", output_file_name)
+
+    # Save the structured accuracy report next to the per-prompt jsonl.
+    summary_path = os.path.splitext(output_file_name)[0] + "_summary.json"
+    with open(summary_path, "w") as fh:
+      json.dump(evaluation_lib.compute_report(outputs), fh, indent=2)
+    logging.info("Generated: %s", summary_path)
 
     # Prints instruction following accuracy report.
     print("=" * 64)
