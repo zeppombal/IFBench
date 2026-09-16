@@ -12,11 +12,51 @@ IFBench consists of two parts:
 
 - New IF-RLVR training constraints: 29 new and challenging constraints, with corresponding verification functions. 
 
-## How to run the evaluation
-Install the requirements via the requirements.txt file.
-You need two jsonl files, one the IFBench_test.jsonl file (in the data folder) and one your file with eval prompts and completions (see sample_output.jsonl as an example). Then run:
+## Installation
+
+IFBench is pip-installable. The package ships all OOD verifiers as well as the
+classic Google IFEval verifiers, so it can serve as a single source of truth
+for both registries.
+
+```bash
+pip install ifbench
+# or
+uv add ifbench
 ```
-python3 -m run_eval --input_data=IFBench_test.jsonl --input_response_data=sample_output.jsonl --output_dir=eval
+
+To work on IFBench itself, clone and sync with [uv](https://docs.astral.sh/uv/):
+
+```bash
+git clone https://github.com/allenai/IFBench.git
+cd IFBench
+uv sync
+```
+
+The package is namespaced under `ifbench` — submodules are `ifbench.instructions`,
+`ifbench.classic_instructions`, `ifbench.instructions_registry`, and
+`ifbench.instructions_util`. The test jsonl is bundled inside the wheel; access
+it via `ifbench.data_path()`.
+
+### Programmatic use
+
+```python
+from ifbench import instructions_registry
+
+checker_cls = instructions_registry.INSTRUCTION_DICT["keywords:existence"]
+checker = checker_cls("keywords:existence")
+checker.build_description(keywords=["cat", "dog"])
+checker.check_following("I saw a cat and a dog today.")  # True
+```
+
+`INSTRUCTION_DICT` contains 83 verifiers in total: 25 classic IFEval keys
+(prefixed `keywords:`, `language:`, `length_constraints:`,
+`detectable_content:`, `detectable_format:`, `combination:`, `startend:`,
+`change_case:`, `punctuation:`) plus 58 IFBench OOD keys.
+
+## How to run the evaluation
+You need two jsonl files, one the IFBench_test.jsonl file (in the data folder) and one your file with eval prompts and completions (see sample_output.jsonl as an example). Then run:
+```bash
+uv run python -m run_eval --input_data=IFBench_test.jsonl --input_response_data=sample_output.jsonl --output_dir=eval
 ```
 
 Note: In the paper we generally report the prompt-level loose accuracy of IFBench. When we generate for evaluation, we use a temperature of 0 and adjust the maximum generated tokens depending on the model type, i.e. for thinking models we allow to generate more tokens and we then process the output to extract the answer without the reasoning chains.
@@ -28,26 +68,6 @@ You can find our released datasets in this [collection](https://huggingface.co/c
 We also release our IF-RLVR code, as part of [open-instruct](https://github.com/allenai/open-instruct). You can run this [GRPO script](https://github.com/allenai/open-instruct/blob/main/open_instruct/grpo_fast.py), using our [training data](https://huggingface.co/datasets/allenai/IF_multi_constraints_upto5). This is an [example command](https://github.com/allenai/open-instruct/blob/main/scripts/train/rlvr/valpy_if_grpo_fast.sh).
 
 The new training constraints and verification functions are here: https://github.com/allenai/open-instruct/tree/main/open_instruct/IFEvalG
-
-## 📊 Model Performance Leaderboard
-
-| Rank | Model | IFBench Score | IFEval Score |
-|------|-------|---------------|--------------|
-| 🥇 1 | OpenAI o3 | **69.3** | 95.0 |
-| 🥈 2 | Qwen2.5 Base + IF-RLVR | **53.7** | 87.8 |
-| 🥉 3 |  Llama 3.1 Base + IF-RLVR | **52.7** | 88.2 |
-| 4 | Gemini 2.5 Pro | 52.3 | 65.4 |
-| 5 | Qwen 2.5 Instruct + IF-RLVR | 48.7 | 89.1 |
-| 6 | OLMo2 Base + IF-RLVR | 47.3 | 70.4 |
-| 7 | OLMo2 Instruct + IF-RLVR | 44.7 | 74.5 |
-| 7 | Tulu3 DPO + IF-RLVR | 43.3 | 92.2 |
-| 9 | Claude 4 Sonnet | 42.3 | 91.3 |
-| 10 | DeepSeek R1 | 38.0 | 86.13 |
-| 11 | Qwen 3 32B | 37.3 | 85.6 |
-| 12 | Qwen 3 8B | 35.0 | 86.3 |
-
-*Sorted by IFBench score (higher is better)*
-If you want your model added to the leaderboard, please create a pull request or email me!
 
 ## Licensing
 
