@@ -4,5 +4,4 @@ nltk
 immutabledict
 spacy
 emoji
-syllapy
-unicodedata2
+syllapy>=0.8.0
